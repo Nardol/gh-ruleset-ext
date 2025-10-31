@@ -1,0 +1,19 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Virtualenvs
+.venv/
+venv/
+
+# Editor junk
+.idea/
+.vscode/
+
+# Coverage / test artefacts
+.coverage
+coverage.xml
+
