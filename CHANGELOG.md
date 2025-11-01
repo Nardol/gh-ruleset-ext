@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Nothing yet.
+### Added
+- Bilingual CLI prompts with English default and `--lang`/`GH_RULESET_EXT_LANG` overrides (initial French translation included).
+- Annotated JSON editor helper that accepts comment lines and surfaces guidance headers in the selected language.
+
+### Changed
+- README documentation now explains language selection and localisation contributions.
 
 ## [0.2.0] - 2025-11-01
 

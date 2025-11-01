@@ -16,6 +16,7 @@ from .prompts import (
 )
 from .utils import resolve_repository
 from .validation import validate_ruleset_payload
+from .i18n import translate as _, set_language, language_from_env, available_languages
 
 
 ENFORCEMENT_CHOICES = ["disabled", "evaluate", "active"]
@@ -24,16 +25,19 @@ TARGET_CHOICES = ["branch", "tag", "push"]
 DEFAULT_BRANCH_TOKEN = "~DEFAULT_BRANCH"
 DEFAULT_BRANCH_REF = f"refs/heads/{DEFAULT_BRANCH_TOKEN}"
 GENERIC_RULE_EDITOR_HEADER = (
-    "Modifiez le JSON de la règle."
-    "\n- La clé 'type' doit correspondre à un type de règle pris en charge (ex : required_status_checks)."
-    "\n- La clé 'parameters' contient les options spécifiques à ce type."
-    "\n- Les lignes qui commencent par # ou // sont ignorées lors de l'enregistrement."
+    "Edit the rule JSON."
+    "\n- The 'type' key must match a supported rule type (e.g. required_status_checks)."
+    "\n- The 'parameters' key contains options specific to that type."
+    "\n- Lines starting with # or // are ignored when saving."
 )
 
 
 def main(argv: Optional[List[str]] = None) -> None:
+    set_language(language_from_env())
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    set_language(getattr(args, "lang", None) or language_from_env())
 
     if not hasattr(args, "handler"):
         parser.print_help()
@@ -44,137 +48,243 @@ def main(argv: Optional[List[str]] = None) -> None:
         api = GitHubAPI(repo)
         args.handler(api, args)
     except KeyboardInterrupt:
-        print("\nInterruption par l'utilisateur (Ctrl+C).", file=sys.stderr)
+        print(_("error_keyboard_interrupt", "\nInterrupted by user (Ctrl+C)."), file=sys.stderr)
         sys.exit(130)
     except GitHubAPIError as exc:
-        print(f"Erreur : {exc}", file=sys.stderr)
+        print(_("error_api", "Error: {message}", message=exc), file=sys.stderr)
         if exc.stderr:
             print(exc.stderr, file=sys.stderr)
         sys.exit(1)
     except RuntimeError as exc:
-        print(f"Erreur : {exc}", file=sys.stderr)
+        print(_("error_runtime", "Error: {message}", message=exc), file=sys.stderr)
         sys.exit(1)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="gh ruleset-ext",
-        description="Gérer les rulesets d'un dépôt GitHub.",
+        description=_("cli_description", "Manage repository rulesets."),
     )
     parser.add_argument(
         "--repo",
-        help="Dépôt cible (OWNER/REPO ou HOST/OWNER/REPO). Par défaut utilise le dépôt courant.",
+        help=_(
+            "arg_repo_help",
+            "Target repository (OWNER/REPO or HOST/OWNER/REPO). Defaults to current gh repo.",
+        ),
+    )
+    parser.add_argument(
+        "--lang",
+        choices=sorted(available_languages().keys()),
+        help=_("arg_lang_help", "Interface language (default: English)."),
     )
 
     subparsers = parser.add_subparsers(dest="command")
 
-    list_parser = subparsers.add_parser("list", help="Lister les rulesets du dépôt.")
-    list_parser.add_argument("--json", action="store_true", help="Sortie JSON brute.")
+    list_parser = subparsers.add_parser(
+        "list",
+        help=_("command_list_help", "List repository rulesets."),
+    )
+    list_parser.add_argument(
+        "--json",
+        action="store_true",
+        help=_("option_json_output", "Return raw JSON."),
+    )
     list_parser.set_defaults(handler=handle_list)
 
-    view_parser = subparsers.add_parser("view", help="Afficher un ruleset précis.")
-    view_parser.add_argument("ruleset_id", type=int, help="Identifiant numérique du ruleset.")
-    view_parser.add_argument("--json", action="store_true", help="Sortie JSON brute.")
+    view_parser = subparsers.add_parser(
+        "view",
+        help=_("command_view_help", "View a specific ruleset."),
+    )
+    view_parser.add_argument(
+        "ruleset_id",
+        type=int,
+        help=_("arg_ruleset_id", "Numeric ruleset identifier."),
+    )
+    view_parser.add_argument(
+        "--json",
+        action="store_true",
+        help=_("option_json_output", "Return raw JSON."),
+    )
     view_parser.set_defaults(handler=handle_view)
 
-    delete_parser = subparsers.add_parser("delete", help="Supprimer un ruleset.")
-    delete_parser.add_argument("ruleset_id", type=int, help="Identifiant numérique du ruleset.")
+    delete_parser = subparsers.add_parser(
+        "delete",
+        help=_("command_delete_help", "Delete a ruleset."),
+    )
     delete_parser.add_argument(
-        "-y", "--yes", action="store_true", help="Confirmation automatique (non interactif)."
+        "ruleset_id",
+        type=int,
+        help=_("arg_ruleset_id", "Numeric ruleset identifier."),
+    )
+    delete_parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help=_("option_yes_help", "Auto-confirm (non-interactive)."),
     )
     delete_parser.set_defaults(handler=handle_delete)
 
-    create_parser = subparsers.add_parser("create", help="Créer un nouveau ruleset.")
+    create_parser = subparsers.add_parser(
+        "create",
+        help=_("command_create_help", "Create a new ruleset."),
+    )
     create_parser.add_argument(
         "--file",
-        help="Fichier JSON pré-rempli pour la création. Si omis, un assistant interactif est utilisé.",
+        help=_(
+            "option_file_help",
+            "Pre-filled JSON file for creation. Otherwise an interactive wizard is used.",
+        ),
     )
     create_parser.add_argument(
         "--from-existing",
         type=int,
-        help="Cloner un ruleset existant avant modifications interactives.",
+        help=_(
+            "option_from_existing_help",
+            "Clone an existing ruleset before interactive changes.",
+        ),
     )
     create_parser.add_argument(
         "--editor",
         action="store_true",
-        help="Ouvrir l'objet JSON final dans l'éditeur par défaut avant envoi.",
+        help=_(
+            "option_editor_help",
+            "Open final JSON in editor before submission.",
+        ),
     )
     create_parser.add_argument(
         "--skip-validate",
         action="store_true",
-        help="Ne pas valider localement le payload via le schéma OpenAPI.",
+        help=_(
+            "option_skip_validate_help",
+            "Skip local payload validation against the OpenAPI schema.",
+        ),
     )
     create_parser.set_defaults(handler=handle_create)
 
-    update_parser = subparsers.add_parser("update", help="Modifier un ruleset existant.")
-    update_parser.add_argument("ruleset_id", type=int, help="Identifiant du ruleset.")
+    update_parser = subparsers.add_parser(
+        "update",
+        help=_("command_update_help", "Update an existing ruleset."),
+    )
+    update_parser.add_argument(
+        "ruleset_id",
+        type=int,
+        help=_("arg_ruleset_id", "Numeric ruleset identifier."),
+    )
     update_parser.add_argument(
         "--file",
-        help="Fichier JSON à utiliser pour remplacer le ruleset. Sinon assistant interactif.",
+        help=_(
+            "option_update_file_help",
+            "JSON file to replace the ruleset. Otherwise use the interactive wizard.",
+        ),
     )
     update_parser.add_argument(
         "--editor",
         action="store_true",
-        help="Ouvrir l'objet JSON final dans l'éditeur par défaut avant envoi.",
+        help=_(
+            "option_editor_help",
+            "Open final JSON in editor before submission.",
+        ),
     )
     update_parser.add_argument(
         "--skip-validate",
         action="store_true",
-        help="Ne pas valider localement le payload via le schéma OpenAPI.",
+        help=_(
+            "option_skip_validate_help",
+            "Skip local payload validation against the OpenAPI schema.",
+        ),
     )
     update_parser.set_defaults(handler=handle_update)
 
-    rule_parser = subparsers.add_parser("rule", help="Gérer les règles individuelles d'un ruleset.")
+    rule_parser = subparsers.add_parser(
+        "rule",
+        help=_("command_rule_help", "Manage individual rules within a ruleset."),
+    )
     rule_parser.add_argument(
         "--skip-validate",
         action="store_true",
-        help="Ne pas valider localement les modifications de ruleset.",
+        help=_(
+            "option_rule_skip_validate_help",
+            "Skip local validation when modifying the ruleset.",
+        ),
     )
     rule_sub = rule_parser.add_subparsers(dest="rule_command")
 
-    rule_list = rule_sub.add_parser("list", help="Lister les règles d'un ruleset.")
+    rule_list = rule_sub.add_parser(
+        "list",
+        help=_("command_rules_list_help", "List rules inside a ruleset."),
+    )
     rule_list.add_argument("ruleset_id", type=int)
     rule_list.set_defaults(handler=handle_rule_list)
 
-    rule_add = rule_sub.add_parser("add", help="Ajouter une règle à un ruleset.")
+    rule_add = rule_sub.add_parser(
+        "add",
+        help=_("command_rules_add_help", "Add a rule to a ruleset."),
+    )
     rule_add.add_argument("ruleset_id", type=int)
     rule_add.set_defaults(handler=handle_rule_add)
 
-    rule_edit = rule_sub.add_parser("edit", help="Modifier une règle existante.")
+    rule_edit = rule_sub.add_parser(
+        "edit",
+        help=_("command_rules_edit_help", "Edit an existing rule."),
+    )
     rule_edit.add_argument("ruleset_id", type=int)
-    rule_edit.add_argument("rule_index", type=int, help="Index (1-based) de la règle à modifier.")
+    rule_edit.add_argument(
+        "rule_index",
+        type=int,
+        help=_("arg_rule_index", "Rule index (1-based)."),
+    )
     rule_edit.set_defaults(handler=handle_rule_edit)
 
-    rule_delete = rule_sub.add_parser("delete", help="Supprimer une règle d'un ruleset.")
+    rule_delete = rule_sub.add_parser(
+        "delete",
+        help=_("command_rules_delete_help", "Delete a rule from a ruleset."),
+    )
     rule_delete.add_argument("ruleset_id", type=int)
-    rule_delete.add_argument("rule_index", type=int, help="Index (1-based) de la règle à supprimer.")
     rule_delete.add_argument(
-        "-y", "--yes", action="store_true", help="Confirmation automatique (non interactif)."
+        "rule_index",
+        type=int,
+        help=_("arg_rule_index", "Rule index (1-based)."),
+    )
+    rule_delete.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help=_("option_rules_delete_confirm_help", "Auto-confirm (non-interactive)."),
     )
     rule_delete.set_defaults(handler=handle_rule_delete)
 
     contexts_parser = subparsers.add_parser(
-        "checks", help="Lister les checks (statuts/actions) récemment observés."
+        "checks",
+        help=_("command_checks_help", "List recently observed checks."),
     )
     contexts_parser.add_argument(
         "--ref",
-        help="Référence (branche ou SHA) pour détecter les checks. Défaut : branche par défaut.",
+        help=_(
+            "option_checks_ref_help",
+            "Reference (branch or SHA) used to inspect checks. Defaults to the default branch.",
+        ),
     )
     contexts_parser.add_argument(
         "--pr",
         type=int,
         action="append",
-        help="Numéro de pull request à inclure (répétable).",
+        help=_("option_checks_pr_help", "Pull request number to include (repeatable)."),
     )
     contexts_parser.add_argument(
         "--latest-pr",
         action="store_true",
-        help="Inclure automatiquement la PR ouverte la plus récente.",
+        help=_(
+            "option_checks_latest_pr_help",
+            "Automatically include the most recent open PR.",
+        ),
     )
     contexts_parser.add_argument(
         "--no-default",
         action="store_true",
-        help="Ne pas analyser le commit de la branche par défaut.",
+        help=_(
+            "option_checks_no_default_help",
+            "Do not inspect the default branch commit.",
+        ),
     )
     contexts_parser.set_defaults(handler=handle_checks_list)
 
@@ -193,14 +303,17 @@ def ensure_payload_is_valid(payload: Dict[str, Any], *, skip: bool, action: str)
     if not errors:
         return True
 
-    print("Erreurs de validation OpenAPI détectées :")
+    print(_("validation_errors_heading", "OpenAPI validation errors detected:"))
     for error in errors:
         print(f"- {error}")
 
-    if prompt_yes_no(f"Poursuivre {action} malgré tout ?", default=False):
+    if prompt_yes_no(
+        _("validation_continue", "Continue {action} anyway?", action=action),
+        default=False,
+    ):
         return True
 
-    print(f"{action.capitalize()} annulée.")
+    print(_("validation_cancelled", "{action} cancelled.", action=action.capitalize()))
     return False
 
 
@@ -215,10 +328,17 @@ def handle_list(api: GitHubAPI, args: argparse.Namespace) -> None:
         return
 
     if not rulesets:
-        print("Aucun ruleset dans ce dépôt.")
+        print(_("list_no_rulesets", "No rulesets in this repository."))
         return
 
-    headers = ["ID", "Nom", "Cible", "Mode", "Règles", "Mis à jour"]
+    headers = [
+        _("table_header_id", "ID"),
+        _("table_header_name", "Name"),
+        _("table_header_target", "Target"),
+        _("table_header_enforcement", "Enforcement"),
+        _("table_header_rules", "Rules"),
+        _("table_header_updated", "Updated"),
+    ]
     rows = []
     for item in rulesets:
         rows.append(
@@ -246,14 +366,24 @@ def handle_view(api: GitHubAPI, args: argparse.Namespace) -> None:
 def handle_delete(api: GitHubAPI, args: argparse.Namespace) -> None:
     if not args.yes:
         confirm = prompt_yes_no(
-            f"Supprimer le ruleset {args.ruleset_id} ? Cette action est irréversible.",
+            _(
+                "prompt_confirm_delete",
+                "Delete ruleset {ruleset_id}? This action cannot be undone.",
+                ruleset_id=args.ruleset_id,
+            ),
             default=False,
         )
         if not confirm:
-            print("Suppression annulée.")
+            print(_("prompt_delete_cancelled", "Deletion cancelled."))
             return
     api.delete_ruleset(args.ruleset_id)
-    print(f"Ruleset {args.ruleset_id} supprimé.")
+    print(
+        _(
+            "prompt_ruleset_deleted",
+            "Ruleset {ruleset_id} deleted.",
+            ruleset_id=args.ruleset_id,
+        )
+    )
 
 
 def handle_create(api: GitHubAPI, args: argparse.Namespace) -> None:
@@ -269,11 +399,21 @@ def handle_create(api: GitHubAPI, args: argparse.Namespace) -> None:
     if args.editor:
         payload = open_editor_with_json(payload)
 
-    if not ensure_payload_is_valid(payload, skip=args.skip_validate, action="la création"):
+    if not ensure_payload_is_valid(
+        payload,
+        skip=args.skip_validate,
+        action=_("action_creation", "creation"),
+    ):
         return
 
     created = api.create_ruleset(payload)
-    print(f"Ruleset créé avec succès (ID {created.get('id')}).")
+    print(
+        _(
+            "prompt_ruleset_created",
+            "Ruleset created successfully (ID {ruleset_id}).",
+            ruleset_id=created.get("id"),
+        )
+    )
 
 
 def handle_update(api: GitHubAPI, args: argparse.Namespace) -> None:
@@ -286,11 +426,21 @@ def handle_update(api: GitHubAPI, args: argparse.Namespace) -> None:
     if args.editor:
         payload = open_editor_with_json(payload)
 
-    if not ensure_payload_is_valid(payload, skip=args.skip_validate, action="la mise à jour"):
+    if not ensure_payload_is_valid(
+        payload,
+        skip=args.skip_validate,
+        action=_("action_update", "update"),
+    ):
         return
 
     updated = api.update_ruleset(args.ruleset_id, payload)
-    print(f"Ruleset {updated.get('id')} mis à jour.")
+    print(
+        _(
+            "prompt_ruleset_updated",
+            "Ruleset {ruleset_id} updated.",
+            ruleset_id=updated.get("id"),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -301,11 +451,11 @@ def handle_rule_list(api: GitHubAPI, args: argparse.Namespace) -> None:
     ruleset = api.get_ruleset(args.ruleset_id)
     rules = ruleset.get("rules") or []
     if not rules:
-        print("Ce ruleset ne contient aucune règle.")
+        print(_("rule_list_empty", "This ruleset does not contain any rules."))
         return
     for idx, rule in enumerate(rules, start=1):
         summary = summarize_rule(rule)
-        print(f"[{idx}] {summary}")
+        print(_("rule_list_entry", "[{index}] {summary}", index=idx, summary=summary))
 
 
 def handle_rule_add(api: GitHubAPI, args: argparse.Namespace) -> None:
@@ -314,10 +464,20 @@ def handle_rule_add(api: GitHubAPI, args: argparse.Namespace) -> None:
     payload["rules"] = manage_rules_interactively(
         api, payload.get("rules", []), action="add"
     )
-    if not ensure_payload_is_valid(payload, skip=getattr(args, "skip_validate", False), action="l'ajout de la règle"):
+    if not ensure_payload_is_valid(
+        payload,
+        skip=getattr(args, "skip_validate", False),
+        action=_("action_rule_add", "adding the rule"),
+    ):
         return
     updated = api.update_ruleset(args.ruleset_id, payload)
-    print(f"Règle ajoutée. Le ruleset compte désormais {len(updated.get('rules', []))} règles.")
+    print(
+        _(
+            "rule_added",
+            "Rule added. The ruleset now contains {count} rules.",
+            count=len(updated.get("rules", [])),
+        )
+    )
 
 
 def handle_rule_edit(api: GitHubAPI, args: argparse.Namespace) -> None:
@@ -326,12 +486,23 @@ def handle_rule_edit(api: GitHubAPI, args: argparse.Namespace) -> None:
     rules = payload.get("rules", [])
     index = args.rule_index - 1
     if index < 0 or index >= len(rules):
-        raise RuntimeError("Index de règle invalide.")
+        raise RuntimeError(_("error_rule_index", "Invalid rule index."))
     rules[index] = edit_rule_interactively(api, rules[index])
-    if not ensure_payload_is_valid(payload, skip=getattr(args, "skip_validate", False), action="la mise à jour de la règle"):
+    if not ensure_payload_is_valid(
+        payload,
+        skip=getattr(args, "skip_validate", False),
+        action=_("action_rule_update", "updating the rule"),
+    ):
         return
     updated = api.update_ruleset(args.ruleset_id, payload)
-    print(f"Règle {args.rule_index} mise à jour. ({summary_for_rule(updated['rules'][index])})")
+    print(
+        _(
+            "rule_updated",
+            "Rule {index} updated. ({summary})",
+            index=args.rule_index,
+            summary=summary_for_rule(updated["rules"][index]),
+        )
+    )
 
 
 def handle_rule_delete(api: GitHubAPI, args: argparse.Namespace) -> None:
@@ -340,17 +511,35 @@ def handle_rule_delete(api: GitHubAPI, args: argparse.Namespace) -> None:
     rules = payload.get("rules", [])
     index = args.rule_index - 1
     if index < 0 or index >= len(rules):
-        raise RuntimeError("Index de règle invalide.")
+        raise RuntimeError(_("error_rule_index", "Invalid rule index."))
     if not args.yes:
         summary = summarize_rule(rules[index])
-        if not prompt_yes_no(f"Supprimer la règle [{args.rule_index}] {summary} ?", default=False):
-            print("Suppression annulée.")
+        if not prompt_yes_no(
+            _(
+                "rule_delete_confirm",
+                "Delete rule [{index}] {summary}?",
+                index=args.rule_index,
+                summary=summary,
+            ),
+            default=False,
+        ):
+            print(_("prompt_delete_cancelled", "Deletion cancelled."))
             return
     removed = rules.pop(index)
-    if not ensure_payload_is_valid(payload, skip=getattr(args, "skip_validate", False), action="la suppression de la règle"):
+    if not ensure_payload_is_valid(
+        payload,
+        skip=getattr(args, "skip_validate", False),
+        action=_("action_rule_delete", "deleting the rule"),
+    ):
         return
     api.update_ruleset(args.ruleset_id, payload)
-    print(f"Règle supprimée : {summarize_rule(removed)}")
+    print(
+        _(
+            "rule_deleted",
+            "Rule removed: {summary}",
+            summary=summarize_rule(removed),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +599,13 @@ def collect_check_contexts(
             sha = api.get_latest_commit_sha(branch)
             record_contexts(sha, f"default:{branch}")
         except GitHubAPIError as exc:
-            warnings.append(f"Branche par défaut: {exc}")
+            warnings.append(
+                _(
+                    "warning_default_branch",
+                    "Default branch: {error}",
+                    error=exc,
+                )
+            )
             if exc.stderr:
                 warnings.append(exc.stderr.strip())
 
@@ -424,7 +619,14 @@ def collect_check_contexts(
             try:
                 sha, ref_name = api.get_pull_request_head_sha(number)
             except GitHubAPIError as exc:
-                warnings.append(f"PR #{number}: {exc}")
+                warnings.append(
+                    _(
+                        "warning_pr_specific",
+                        "PR #{number}: {error}",
+                        number=number,
+                        error=exc,
+                    )
+                )
                 if exc.stderr:
                     warnings.append(exc.stderr.strip())
                 continue
@@ -438,14 +640,26 @@ def collect_check_contexts(
         try:
             latest = api.get_latest_open_pull_request()
         except GitHubAPIError as exc:
-            warnings.append(f"PR la plus récente (ouverte): {exc}")
+            warnings.append(
+                _(
+                    "warning_latest_open_pr",
+                    "Latest open PR: {error}",
+                    error=exc,
+                )
+            )
             if exc.stderr:
                 warnings.append(exc.stderr.strip())
         if not latest:
             try:
                 latest = api.get_latest_merged_pull_request()
             except GitHubAPIError as exc:
-                warnings.append(f"PR la plus récente (fusionnée): {exc}")
+                warnings.append(
+                    _(
+                        "warning_latest_merged_pr",
+                        "Latest merged PR: {error}",
+                        error=exc,
+                    )
+                )
                 if exc.stderr:
                     warnings.append(exc.stderr.strip())
                 latest = None
@@ -461,9 +675,19 @@ def collect_check_contexts(
                     label += " [merged]"
                 record_contexts(sha, label)
             else:
-                warnings.append("PR la plus récente: impossible de déterminer le SHA du head.")
+                warnings.append(
+                    _(
+                        "warning_latest_pr_no_sha",
+                        "Latest PR: unable to determine head SHA.",
+                    )
+                )
         else:
-            warnings.append("Aucune PR ouverte ni fusionnée récemment trouvée.")
+            warnings.append(
+                _(
+                    "warning_no_recent_pr",
+                    "No open or recently merged PR found.",
+                )
+            )
 
     context_entries: List[Dict[str, Any]] = []
     for data in contexts_map.values():
@@ -486,13 +710,13 @@ def handle_checks_list(api: GitHubAPI, args: argparse.Namespace) -> None:
     )
 
     for warning in warnings:
-        print(f"Avertissement: {warning}", file=sys.stderr)
+        print(_("warning_prefix", "Warning: {message}", message=warning), file=sys.stderr)
 
     if not context_entries:
-        print("Aucun check détecté parmi les références inspectées.")
+        print(_("checks_none_found", "No checks detected among the inspected references."))
         return
 
-    print("Checks détectés :")
+    print(_("checks_detected_heading", "Detected checks:"))
     for entry in context_entries:
         label = entry["context"]
         integration_id = entry.get("integration_id")
@@ -511,12 +735,12 @@ def handle_checks_list(api: GitHubAPI, args: argparse.Namespace) -> None:
         if entry.get("kinds"):
             label += f" <{', '.join(entry['kinds'])}>"
         origins = ", ".join(entry["sources"])
-        print(f"- {label}  [sources: {origins}]")
+        print(_("checks_entry", "- {label}  [sources: {origins}]", label=label, origins=origins))
 
     if inspected_sources:
-        print("\nRéférences analysées :")
+        print(_("checks_inspected_heading", "\nInspected references:"))
         for label in inspected_sources:
-            print(f"- {label}")
+            print(_("checks_reference_entry", "- {label}", label=label))
 
 
 # ---------------------------------------------------------------------------
@@ -529,14 +753,17 @@ def interactive_ruleset_builder(
 ) -> Dict[str, Any]:
     data = deepcopy(existing) if existing else {}
 
-    data["name"] = prompt_string("Nom du ruleset", default=data.get("name"))
+    data["name"] = prompt_string(
+        _("prompt_ruleset_name", "Ruleset name"),
+        default=data.get("name"),
+    )
     data["target"] = prompt_choice(
-        "Cible du ruleset",
+        _("prompt_ruleset_target", "Ruleset target"),
         TARGET_CHOICES,
         default=data.get("target", "branch"),
     )
     data["enforcement"] = prompt_choice(
-        "Mode d'application",
+        _("prompt_ruleset_enforcement", "Enforcement mode"),
         ENFORCEMENT_CHOICES,
         default=data.get("enforcement", "active"),
     )
@@ -554,7 +781,7 @@ def interactive_ruleset_builder(
 
     include: List[str] = []
     include_default_branch = prompt_yes_no(
-        "Appliquer le ruleset à la branche par défaut ?",
+        _("prompt_apply_default_branch", "Apply the ruleset to the default branch?"),
         default=has_default_branch,
     )
     if include_default_branch:
@@ -564,7 +791,10 @@ def interactive_ruleset_builder(
     if not prompt_for_include:
         if include_default_branch:
             prompt_for_include = prompt_yes_no(
-                "Ajouter d'autres branches ou motifs en plus de la branche par défaut ?",
+                _(
+                    "prompt_additional_targets",
+                    "Add other branches or patterns in addition to the default branch?",
+                ),
                 default=False,
             )
         else:
@@ -572,14 +802,22 @@ def interactive_ruleset_builder(
 
     if prompt_for_include:
         extra_include = prompt_multi_value(
-            f"Cibles {data['target']} à inclure (laisser vide pour toutes)",
+            _(
+                "prompt_include_targets",
+                "Targets {target} to include (leave blank for all)",
+                target=data["target"],
+            ),
             default=include_defaults,
             formatter=lambda value: format_ref_pattern(value, data["target"]),
         )
         include.extend(extra_include)
 
     exclude = prompt_multi_value(
-        f"Cibles {data['target']} à exclure",
+        _(
+            "prompt_exclude_targets",
+            "Targets {target} to exclude",
+            target=data["target"],
+        ),
         default=exclude_defaults,
         formatter=lambda value: format_ref_pattern(value, data["target"]),
     )
@@ -590,11 +828,20 @@ def interactive_ruleset_builder(
     data["conditions"] = new_conditions
 
     bypass = data.get("bypass_actors")
-    if bypass and prompt_yes_no("Souhaitez-vous modifier les bypass existants ?", default=False):
+    if bypass and prompt_yes_no(
+        _("prompt_modify_bypass", "Edit existing bypass actors?"),
+        default=False,
+    ):
         bypass = edit_bypass_actors(bypass)
     elif bypass is None:
         bypass = []
-        if prompt_yes_no("Définir des acteurs autorisés à contourner le ruleset ?", default=False):
+        if prompt_yes_no(
+            _(
+                "prompt_define_bypass",
+                "Configure actors allowed to bypass the ruleset?",
+            ),
+            default=False,
+        ):
             bypass = edit_bypass_actors([])
     data["bypass_actors"] = bypass
 
@@ -615,27 +862,34 @@ def manage_rules_interactively(
             rules.append(add_rule_interactively(api))
             return rules
 
-        print("\nRègles actuelles :")
+        print(_("manage_rules_current", "\nCurrent rules:"))
         if not rules:
-            print("- (aucune)")
+            print(_("manage_rules_none", "- (none)"))
         else:
             for idx, rule in enumerate(rules, start=1):
-                print(f"[{idx}] {summarize_rule(rule)}")
+                print(
+                    _(
+                        "manage_rules_entry",
+                        "[{index}] {summary}",
+                        index=idx,
+                        summary=summarize_rule(rule),
+                    )
+                )
 
-        print("\nOptions :")
-        print("1. Ajouter une règle")
+        print(_("manage_options_heading", "\nOptions:"))
+        print(_("manage_option_add", "1. Add a rule"))
         if rules:
-            print("2. Modifier une règle")
-            print("3. Supprimer une règle")
-            print("4. Terminer")
+            print(_("manage_option_edit", "2. Edit a rule"))
+            print(_("manage_option_delete", "3. Delete a rule"))
+            print(_("manage_option_finish", "4. Finish"))
             choices = {"1", "2", "3", "4"}
         else:
-            print("2. Terminer")
+            print(_("manage_option_finish_only", "2. Finish"))
             choices = {"1", "2"}
 
-        choice = input("Votre choix: ").strip()
+        choice = input(_("manage_choice_prompt", "Your choice:" ) + " ").strip()
         if choice not in choices:
-            print("Choix invalide.")
+            print(_("manage_invalid_choice", "Invalid choice."))
             continue
 
         if choice == "1":
@@ -643,26 +897,38 @@ def manage_rules_interactively(
         elif choice == "2":
             if not rules:
                 return rules
-            idx = select_rule_index(rules, "modifier")
+            idx = select_rule_index(
+                rules,
+                _("manage_select_action_edit", "edit"),
+            )
             rules[idx] = edit_rule_interactively(api, rules[idx])
         elif choice == "3":
-            idx = select_rule_index(rules, "supprimer")
+            idx = select_rule_index(
+                rules,
+                _("manage_select_action_delete", "delete"),
+            )
             removed = rules.pop(idx)
-            print(f"Règle supprimée : {summarize_rule(removed)}")
+            print(
+                _(
+                    "rule_deleted",
+                    "Rule removed: {summary}",
+                    summary=summarize_rule(removed),
+                )
+            )
         else:
             return rules
 
 
 def add_rule_interactively(api: GitHubAPI) -> Dict[str, Any]:
-    print("\nType de règle à ajouter :")
-    print("1. Checks requis (required_status_checks)")
-    print("2. Éditeur JSON libre")
-    choice = input("Votre choix [1]: ").strip() or "1"
+    print(_("add_rule_type_heading", "\nType of rule to add:"))
+    print(_("add_rule_option_required_checks", "1. Required status checks"))
+    print(_("add_rule_option_json_editor", "2. Free-form JSON editor"))
+    choice = input(_("add_rule_choice_prompt", "Your choice [1]: ")).strip() or "1"
     if choice == "1":
         return build_required_status_rule(api)
     payload = open_editor_with_json(
         {"type": "", "parameters": {}},
-        header=GENERIC_RULE_EDITOR_HEADER,
+        header=_("prompt_json_editor_header", GENERIC_RULE_EDITOR_HEADER),
         allow_comments=True,
     )
     validate_rule_payload(payload)
@@ -671,13 +937,18 @@ def add_rule_interactively(api: GitHubAPI) -> Dict[str, Any]:
 
 def edit_rule_interactively(api: GitHubAPI, rule: Dict[str, Any]) -> Dict[str, Any]:
     if rule.get("type") == "required_status_checks":
-        print("Modification d'une règle de checks requis.")
+        print(
+            _(
+                "edit_required_checks_heading",
+                "Editing a required status checks rule.",
+            )
+        )
         return build_required_status_rule(api, existing=rule)
 
-    print("Modification via éditeur JSON.")
+    print(_("edit_rule_via_editor", "Editing via JSON editor."))
     payload = open_editor_with_json(
         rule,
-        header=GENERIC_RULE_EDITOR_HEADER,
+        header=_("prompt_json_editor_header", GENERIC_RULE_EDITOR_HEADER),
         allow_comments=True,
     )
     validate_rule_payload(payload)
@@ -690,22 +961,45 @@ def build_required_status_rule(
 ) -> Dict[str, Any]:
     params = existing.get("parameters", {}) if existing else {}
     contexts = params.get("required_status_checks", [])
-    print("\nConfiguration des checks requis.")
+    print(_("required_checks_heading", "\nConfigure required checks."))
     available_entries: List[Dict[str, Any]] = []
-    if prompt_yes_no("Lister les checks récemment observés ?", default=True):
-        include_default = prompt_yes_no("Inclure la branche par défaut ?", default=True)
+    if prompt_yes_no(_("required_checks_prompt_recent", "List recently observed checks?"), default=True):
+        include_default = prompt_yes_no(
+            _("required_checks_include_default", "Include the default branch?"),
+            default=True,
+        )
         include_latest_pr = prompt_yes_no(
-            "Inclure la PR ouverte ou récemment fusionnée la plus récente ?", default=True
+            _(
+                "required_checks_include_latest_pr",
+                "Include the most recent open or merged PR?",
+            ),
+            default=True,
         )
         pr_numbers: List[int] = []
-        pr_input = input("Numéros de PR supplémentaires (séparés par des espaces) : ").strip()
+        pr_input = input(
+            _(
+                "required_checks_extra_prs",
+                "Additional PR numbers (space-separated): ",
+            )
+        ).strip()
         if pr_input:
             for token in pr_input.split():
                 if token.isdigit():
                     pr_numbers.append(int(token))
                 else:
-                    print(f"Numéro de PR ignoré (non numérique) : {token}")
-        ref_input = input("Références supplémentaires (branches ou SHAs, séparées par des espaces) : ").strip()
+                    print(
+                        _(
+                            "required_checks_invalid_pr",
+                            "Ignored PR number (non-numeric): {token}",
+                            token=token,
+                        )
+                    )
+        ref_input = input(
+            _(
+                "required_checks_extra_refs",
+                "Additional references (branches or SHAs, space-separated): ",
+            )
+        ).strip()
         extra_refs = [value.strip() for value in ref_input.split() if value.strip()] if ref_input else []
 
         available_entries, inspected_sources, warnings = collect_check_contexts(
@@ -716,13 +1010,13 @@ def build_required_status_rule(
             include_latest_pr=include_latest_pr,
         )
         for warning in warnings:
-            print(f"Avertissement: {warning}")
+            print(_("warning_prefix", "Warning: {message}", message=warning))
         if inspected_sources:
-            print("Références analysées :")
+            print(_("checks_inspected_heading", "\nInspected references:"))
             for label in inspected_sources:
-                print(f"- {label}")
+                print(_("checks_reference_entry", "- {label}", label=label))
         if not available_entries:
-            print("Aucun check détecté pour les références sélectionnées.")
+            print(_("required_checks_none", "No checks detected for the selected references."))
 
     contexts = prompt_status_checks(contexts, available_entries)
     cleaned_checks: List[Dict[str, Any]] = []
@@ -732,11 +1026,17 @@ def build_required_status_rule(
             entry["integration_id"] = item["integration_id"]
         cleaned_checks.append(entry)
     strict = prompt_yes_no(
-        "Exiger que les PR soient testées avec le dernier commit (strict_required_status_checks_policy) ?",
+        _(
+            "required_checks_strict",
+            "Require PRs to be tested with the latest commit (strict_required_status_checks_policy)?",
+        ),
         default=params.get("strict_required_status_checks_policy", True),
     )
     do_not_enforce = prompt_yes_no(
-        "Autoriser la création de refs même si les checks ne passent pas (do_not_enforce_on_create) ?",
+        _(
+            "required_checks_allow_create",
+            "Allow ref creation even if checks fail (do_not_enforce_on_create)?",
+        ),
         default=params.get("do_not_enforce_on_create", False),
     )
     return {
@@ -792,9 +1092,9 @@ def prompt_status_checks(
 
     available_labels = [format_entry(entry) for entry in available_entries]
     while True:
-        print("\nChecks actuellement requis :")
+        print(_("status_checks_current_heading", "\nCurrently required checks:"))
         if not checks:
-            print("- (aucun)")
+            print(_("status_checks_none", "- (none)"))
         else:
             for idx, item in enumerate(checks, start=1):
                 integration = item.get("integration_id")
@@ -807,26 +1107,31 @@ def prompt_status_checks(
                 print(f"[{idx}] {label}")
 
         if available_entries:
-            print("\nChecks récemment observés :")
+            print(_("status_checks_recent_heading", "\nRecently observed checks:"))
             for idx, label in enumerate(available_labels, start=1):
                 print(f"{idx}. {label}")
 
-        print("\nOptions :")
-        print("1. Ajouter un check")
+        print(_("status_checks_options_heading", "\nOptions:"))
+        print(_("status_checks_option_add", "1. Add a check"))
         if checks:
-            print("2. Retirer un check")
-            print("3. Terminer")
+            print(_("status_checks_option_remove", "2. Remove a check"))
+            print(_("status_checks_option_finish", "3. Finish"))
             valid = {"1", "2", "3"}
         else:
-            print("2. Terminer")
+            print(_("status_checks_option_finish_only", "2. Finish"))
             valid = {"1", "2"}
 
-        choice = input("Votre choix: ").strip()
+        choice = input(_("status_checks_choice_prompt", "Your choice:" ) + " ").strip()
         if choice not in valid:
-            print("Choix invalide.")
+            print(_("manage_invalid_choice", "Invalid choice."))
             continue
         if choice == "1":
-            context_input = input("Nom du check (ou numéro de la liste ci-dessus): ").strip()
+            context_input = input(
+                _(
+                    "status_checks_context_prompt",
+                    "Check name (or number from the list above): ",
+                )
+            ).strip()
             integration_default: Optional[int] = None
             integration_app: Optional[str] = None
             if context_input.isdigit() and available_entries:
@@ -838,20 +1143,32 @@ def prompt_status_checks(
                     app_slug = entry.get("app_slug") or entry.get("app_name")
                     integration_app = app_slug
                 else:
-                    print("Index invalide.")
+                    print(_("status_checks_invalid_index", "Invalid index."))
                     continue
             else:
                 context = context_input
             if not context:
-                print("Nom obligatoire.")
+                print(_("status_checks_name_required", "Name is required."))
                 continue
             prompt_suffix = (
-                f" (laisser vide pour utiliser {integration_default})" if integration_default is not None else ""
+                _(
+                    "status_checks_integration_suffix",
+                    " (leave blank to use {value})",
+                    value=integration_default,
+                )
+                if integration_default is not None
+                else ""
             )
-            integration_raw = input(f"Integration ID{prompt_suffix}: ").strip()
+            integration_raw = input(
+                _(
+                    "status_checks_integration_prompt",
+                    "Integration ID{suffix}: ",
+                    suffix=prompt_suffix,
+                )
+            ).strip()
             if integration_raw:
                 if not integration_raw.isdigit():
-                    print("Integration ID doit être numérique.")
+                    print(_("status_checks_integration_numeric", "Integration ID must be numeric."))
                     continue
                 integration_id = int(integration_raw)
             else:
@@ -864,9 +1181,18 @@ def prompt_status_checks(
                 }
             )
         elif choice == "2" and checks:
-            idx = select_rule_index(checks, "retirer")
+            idx = select_rule_index(
+                checks,
+                _("status_checks_select_remove", "remove"),
+            )
             removed = checks.pop(idx)
-            print(f"Check retiré : {removed['context']}")
+            print(
+                _(
+                    "status_checks_removed",
+                    "Check removed: {context}",
+                    context=removed["context"],
+                )
+            )
         else:
             return checks
 
@@ -874,69 +1200,78 @@ def prompt_status_checks(
 def edit_bypass_actors(existing: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     actors = [dict(item) for item in existing]
     while True:
-        print("\nActeurs pouvant contourner le ruleset :")
+        print(_("bypass_heading", "\nActors allowed to bypass the ruleset:"))
         if not actors:
-            print("- (aucun)")
+            print(_("manage_rules_none", "- (none)"))
         else:
             for idx, actor in enumerate(actors, start=1):
                 label = actor_summary(actor)
-                print(f"[{idx}] {label}")
-        print("\nOptions :")
-        print("1. Ajouter")
+                print(_("manage_rules_entry", "[{index}] {summary}", index=idx, summary=label))
+        print(_("manage_options_heading", "\nOptions:"))
+        print(_("bypass_option_add", "1. Add"))
         if actors:
-            print("2. Supprimer")
-            print("3. Terminer")
+            print(_("bypass_option_remove", "2. Remove"))
+            print(_("bypass_option_finish", "3. Finish"))
             valid = {"1", "2", "3"}
         else:
-            print("2. Terminer")
+            print(_("bypass_option_finish_only", "2. Finish"))
             valid = {"1", "2"}
-        choice = input("Votre choix: ").strip()
+        choice = input(_("manage_choice_prompt", "Your choice:") + " ").strip()
         if choice not in valid:
-            print("Choix invalide.")
+            print(_("manage_invalid_choice", "Invalid choice."))
             continue
         if choice == "1":
             actors.append(prompt_bypass_actor())
         elif choice == "2" and actors:
-            idx = select_rule_index(actors, "supprimer")
+            idx = select_rule_index(
+                actors,
+                _("manage_select_action_delete", "delete"),
+            )
             removed = actors.pop(idx)
-            print(f"Acteur retiré : {actor_summary(removed)}")
+            print(
+                _(
+                    "bypass_removed",
+                    "Actor removed: {summary}",
+                    summary=actor_summary(removed),
+                )
+            )
         else:
             return actors
 
 
 def prompt_bypass_actor() -> Dict[str, Any]:
-    print("\nType d'acteur :")
-    print("1. RepositoryRole (ex: admin, maintain)")
-    print("2. Team (ORG/slug)")
-    print("3. Integration (ID numérique)")
-    print("4. OrganizationAdmin")
-    print("5. EnterpriseAdmin")
-    choice = input("Votre choix [1]: ").strip() or "1"
+    print(_("bypass_actor_type_heading", "\nActor type:"))
+    print(_("bypass_actor_option_repo", "1. RepositoryRole (e.g. admin, maintain)"))
+    print(_("bypass_actor_option_team", "2. Team (ORG/slug)"))
+    print(_("bypass_actor_option_integration", "3. Integration (numeric ID)"))
+    print(_("bypass_actor_option_org_admin", "4. OrganizationAdmin"))
+    print(_("bypass_actor_option_enterprise_admin", "5. EnterpriseAdmin"))
+    choice = input(_("add_rule_choice_prompt", "Your choice [1]: ")).strip() or "1"
     bypass_mode = prompt_choice(
-        "Mode de contournement",
+        _("bypass_mode_prompt", "Bypass mode"),
         ["always", "pull_request"],
         default="always",
     )
     if choice == "1":
-        role = input("Nom du rôle du dépôt (ex: maintain): ").strip()
+        role = input(_("bypass_role_prompt", "Repository role name (e.g. maintain): ")).strip()
         if not role:
-            raise RuntimeError("Le rôle ne peut pas être vide.")
+            raise RuntimeError(_("bypass_role_empty", "Role cannot be empty."))
         return {
             "actor_type": "RepositoryRole",
             "repository_role_name": role,
             "bypass_mode": bypass_mode,
         }
     if choice == "2":
-        team = input("Team (ORG/slug): ").strip()
+        team = input(_("bypass_team_prompt", "Team (ORG/slug): ")).strip()
         if "/" not in team:
-            raise RuntimeError("Format attendu : ORG/slug.")
+            raise RuntimeError(_("bypass_team_format", "Expected format: ORG/slug."))
         org, slug = team.split("/", 1)
         actor_id = resolve_team_id(org, slug)
         return {"actor_type": "Team", "actor_id": actor_id, "bypass_mode": bypass_mode}
     if choice == "3":
-        integration = input("Integration ID: ").strip()
+        integration = input(_("bypass_integration_prompt", "Integration ID: ")).strip()
         if not integration.isdigit():
-            raise RuntimeError("Integration ID doit être numérique.")
+            raise RuntimeError(_("status_checks_integration_numeric", "Integration ID must be numeric."))
         return {
             "actor_type": "Integration",
             "actor_id": int(integration),
@@ -962,7 +1297,7 @@ def resolve_team_id(org: str, slug: str) -> int:
     data = json.loads(completed)
     team_id = data.get("id")
     if not isinstance(team_id, int):
-        raise RuntimeError("Impossible de récupérer l'identifiant de l'équipe.")
+        raise RuntimeError(_("bypass_team_lookup_failed", "Unable to retrieve team identifier."))
     return team_id
 
 
@@ -978,34 +1313,66 @@ def subprocess_run(command: List[str]) -> str:
         )
     except subprocess.CalledProcessError as exc:  # pragma: no cover - interactive flow
         stderr = exc.stderr.decode("utf-8", errors="replace")
-        raise RuntimeError(f"Commande {' '.join(command)} en erreur : {stderr}") from exc
+        raise RuntimeError(
+            _(
+                "subprocess_error",
+                "Command {command} failed: {stderr}",
+                command=" ".join(command),
+                stderr=stderr,
+            )
+        ) from exc
     return result.stdout.decode("utf-8")
 
 
 def print_ruleset_details(ruleset: Dict[str, Any]) -> None:
-    print(f"ID : {ruleset.get('id')}")
-    print(f"Nom : {ruleset.get('name')}")
-    print(f"Cible : {ruleset.get('target')}")
-    print(f"Mode : {ruleset.get('enforcement')}")
-    print(f"Créé : {ruleset.get('created_at')}")
-    print(f"Mis à jour : {ruleset.get('updated_at')}")
+    print(_("ruleset_details_id", "ID: {value}", value=ruleset.get("id")))
+    print(_("ruleset_details_name", "Name: {value}", value=ruleset.get("name")))
+    print(_("ruleset_details_target", "Target: {value}", value=ruleset.get("target")))
+    print(
+        _(
+            "ruleset_details_enforcement",
+            "Enforcement: {value}",
+            value=ruleset.get("enforcement"),
+        )
+    )
+    print(
+        _(
+            "ruleset_details_created",
+            "Created: {value}",
+            value=ruleset.get("created_at"),
+        )
+    )
+    print(
+        _(
+            "ruleset_details_updated",
+            "Updated: {value}",
+            value=ruleset.get("updated_at"),
+        )
+    )
 
     conditions = ruleset.get("conditions") or {}
     if conditions:
-        print("Conditions :")
+        print(_("ruleset_details_conditions", "Conditions:"))
         for key, value in conditions.items():
-            print(f"  - {key}: {value}")
+            print(_("ruleset_details_condition_entry", "  - {key}: {value}", key=key, value=value))
     bypass = ruleset.get("bypass_actors") or []
     if bypass:
-        print("Acteurs pouvant contourner :")
+        print(_("ruleset_details_bypass", "Bypass actors:"))
         for actor in bypass:
-            print(f"  - {actor_summary(actor)}")
+            print(_("ruleset_details_bypass_entry", "  - {summary}", summary=actor_summary(actor)))
 
     rules = ruleset.get("rules") or []
     if rules:
-        print("Règles :")
+        print(_("ruleset_details_rules", "Rules:"))
         for idx, rule in enumerate(rules, start=1):
-            print(f"  [{idx}] {summarize_rule(rule)}")
+            print(
+                _(
+                    "ruleset_details_rule_entry",
+                    "  [{index}] {summary}",
+                    index=idx,
+                    summary=summarize_rule(rule),
+                )
+            )
 
 
 def summarize_rule(rule: Dict[str, Any]) -> str:
@@ -1041,12 +1408,18 @@ def actor_summary(actor: Dict[str, Any]) -> str:
 
 
 def select_rule_index(items: List[Any], action: str) -> int:
-    response = input(f"Index de la règle à {action}: ").strip()
+    response = input(
+        _(
+            "select_rule_prompt",
+            "Index of the rule to {action}: ",
+            action=action,
+        )
+    ).strip()
     if not response.isdigit():
-        raise RuntimeError("Index numérique attendu.")
+        raise RuntimeError(_("select_rule_numeric", "Numeric index expected."))
     idx = int(response) - 1
     if not (0 <= idx < len(items)):
-        raise RuntimeError("Index hors limites.")
+        raise RuntimeError(_("select_rule_out_of_range", "Index out of range."))
     return idx
 
 
@@ -1071,7 +1444,12 @@ def prepare_ruleset_payload(data: Dict[str, Any]) -> Dict[str, Any]:
 
 def validate_rule_payload(payload: Dict[str, Any]) -> None:
     if not isinstance(payload, dict) or "type" not in payload:
-        raise RuntimeError("Une règle doit être un objet JSON avec la clé 'type'.")
+        raise RuntimeError(
+            _(
+                "error_rule_payload_type",
+                "A rule must be a JSON object with the 'type' key.",
+            )
+        )
 
 
 def strip_ref_prefix(value: str) -> str:

@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Sequence
 
+from .i18n import translate as _
+
 
 def prompt_string(
     message: str,
@@ -27,7 +29,7 @@ def prompt_string(
             return default
         if not required:
             return ""
-        print("Veuillez saisir une valeur.")
+        print(_("error_value_required", "Please enter a value."))
 
 
 def prompt_choice(
@@ -39,7 +41,7 @@ def prompt_choice(
     """Prompt user to pick one choice from a list."""
 
     if not choices:
-        raise ValueError("La liste de choix est vide.")
+        raise ValueError(_("error_empty_choice_list", "Choice list is empty."))
 
     indexed = list(enumerate(choices, start=1))
     options = ", ".join(f"{idx}={label}" for idx, label in indexed)
@@ -59,11 +61,13 @@ def prompt_choice(
             idx = int(response)
             if 1 <= idx <= len(choices):
                 return choices[idx - 1]
-        print("Réponse invalide, veuillez choisir un index valide.")
+        print(_("error_invalid_choice", "Invalid response, please choose a valid index."))
 
 
 def prompt_yes_no(message: str, *, default: bool = False) -> bool:
-    default_label = "O/n" if default else "o/N"
+    default_label = _("prompt_yes_no_default_yes", "Y/n") if default else _(
+        "prompt_yes_no_default_no", "y/N"
+    )
     while True:
         response = input(f"{message} [{default_label}]: ").strip().lower()
         if not response:
@@ -72,7 +76,7 @@ def prompt_yes_no(message: str, *, default: bool = False) -> bool:
             return True
         if response in {"n", "non", "no"}:
             return False
-        print("Merci de répondre par oui ou non.")
+        print(_("prompt_yes_no_invalid", "Please answer yes or no."))
 
 
 def prompt_multi_value(
@@ -85,10 +89,19 @@ def prompt_multi_value(
 
     values: List[str] = []
     default_list = list(default or [])
-    if default_list and prompt_yes_no(f"{message} (garder les valeurs existantes ?)", default=True):
+    if default_list and prompt_yes_no(
+        _("prompt_keep_existing", "{message} (keep existing values?)", message=message),
+        default=True,
+    ):
         return [formatter(value) for value in default_list]
 
-    print(f"{message} (entrée vide pour terminer)")
+    print(
+        _(
+            "prompt_multi_value_hint",
+            "{message} (leave blank to finish)",
+            message=message,
+        )
+    )
     while True:
         response = input("> ").strip()
         if not response:
@@ -128,8 +141,10 @@ def _resolve_editor() -> str:
             return candidate
 
     raise RuntimeError(
-        "Aucun éditeur détecté (VISUAL/EDITOR, gh config get editor). "
-        "Définissez-en un ou utilisez --file pour fournir un JSON."
+        _(
+            "prompt_editor_not_found",
+            "No editor detected (VISUAL/EDITOR, gh config get editor). Set one or use --file to provide JSON.",
+        )
     )
 
 
@@ -166,15 +181,20 @@ def open_editor_with_json(
                 filtered_lines.append(line)
             content = "\n".join(filtered_lines)
         if not content.strip():
-            raise RuntimeError("Le contenu de l'éditeur est vide.")
+            raise RuntimeError(_("prompt_empty_editor_content", "Editor content is empty."))
         try:
             return json.loads(content)
         except json.JSONDecodeError as exc:  # pragma: no cover - interactive flow
             raise RuntimeError(
-                "Le contenu fourni n'est pas un JSON valide. Supprimez ou corrigez les annotations."
+                _(
+                    "prompt_invalid_json",
+                    "Provided content is not valid JSON. Remove or fix annotations.",
+                )
             ) from exc
     except subprocess.CalledProcessError as exc:  # pragma: no cover - interactive flow
-        raise RuntimeError(f"L'éditeur s'est terminé en erreur ({exc}).") from exc
+        raise RuntimeError(
+            _("prompt_open_editor_error", "Editor exited with an error ({exc}).", exc=exc)
+        ) from exc
     finally:
         try:
             path.unlink()

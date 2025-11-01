@@ -31,6 +31,20 @@
 
 No third-party Python libraries are required; the extension shells out to `gh api`.
 
+### Language support
+
+The CLI prompts are **English by default**, matching the upstream GitHub CLI experience. You can switch to another language (currently French) either per command or globally:
+
+```bash
+# One-off invocation
+gh ruleset-ext create --lang fr
+
+# Persist for all commands in the current shell
+export GH_RULESET_EXT_LANG=fr
+```
+
+If `--lang` is not provided, the extension checks `GH_RULESET_EXT_LANG`, then `LANG`, and finally falls back to English. Contributions with additional translations are welcome—see `src/ruleset_cli/i18n.py` for the existing keys.
+
 ---
 
 ## Installation

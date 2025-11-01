@@ -34,6 +34,20 @@ gh extension install .
 - Python ≥ 3.10 (fourni sur macOS/Linux récents) ;
 - L’extension se repose sur le token utilisé par `gh`. Vérifiez avec `gh auth status`.
 
+### Langue de l’interface
+
+Par défaut, les invites sont en **anglais**, comme pour la CLI GitHub officielle. Vous pouvez basculer en français (ou dans toute autre traduction disponible) pour une commande ou pour toute la session :
+
+```bash
+# Pour une exécution ponctuelle
+gh ruleset-ext create --lang fr
+
+# Pour toutes les commandes de la session courante
+export GH_RULESET_EXT_LANG=fr
+```
+
+Sans `--lang`, l’extension regarde d’abord `GH_RULESET_EXT_LANG`, puis `LANG`, avant de revenir à l’anglais. Les contributions de nouvelles traductions sont les bienvenues (`src/ruleset_cli/i18n.py`).
+
 ## Utilisation rapide
 
 Chaque commande accepte `--repo OWNER/REPO` (ou `HOST/OWNER/REPO`). Sans précision, le dépôt courant (`gh repo view`) est utilisé.
