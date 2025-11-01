@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Sequence
@@ -95,15 +97,46 @@ def prompt_multi_value(
     return values
 
 
-def open_editor_with_json(data: Any) -> Any:
-    """Open user editor (EDITOR/VISUAL) and return parsed JSON."""
+def _resolve_editor() -> str:
+    for env_var in ("VISUAL", "EDITOR"):
+        value = os.environ.get(env_var)
+        if value:
+            return value
 
-    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
-    if not editor:
-        raise RuntimeError(
-            "Aucun éditeur configuré (variables d'environnement EDITOR ou VISUAL). "
-            "Définissez-en un ou utilisez --file pour fournir un JSON."
+    command = ["gh", "config", "get", "editor"]
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
         )
+    except FileNotFoundError:
+        completed = None
+    except subprocess.CalledProcessError:
+        completed = None
+    if completed:
+        gh_editor = completed.stdout.decode("utf-8").strip()
+        if gh_editor:
+            return gh_editor
+
+    if sys.platform == "win32":
+        return "notepad"
+
+    for candidate in ("nano", "vi"):
+        if shutil.which(candidate):
+            return candidate
+
+    raise RuntimeError(
+        "Aucun éditeur détecté (VISUAL/EDITOR, gh config get editor). "
+        "Définissez-en un ou utilisez --file pour fournir un JSON."
+    )
+
+
+def open_editor_with_json(data: Any) -> Any:
+    """Open user editor and return parsed JSON."""
+
+    editor = _resolve_editor()
 
     with tempfile.NamedTemporaryFile("w+", suffix=".json", delete=False) as tmp:
         path = Path(tmp.name)
