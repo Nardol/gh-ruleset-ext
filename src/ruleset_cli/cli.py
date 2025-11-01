@@ -23,6 +23,12 @@ TARGET_CHOICES = ["branch", "tag", "push"]
 
 DEFAULT_BRANCH_TOKEN = "~DEFAULT_BRANCH"
 DEFAULT_BRANCH_REF = f"refs/heads/{DEFAULT_BRANCH_TOKEN}"
+GENERIC_RULE_EDITOR_HEADER = (
+    "Modifiez le JSON de la règle."
+    "\n- La clé 'type' doit correspondre à un type de règle pris en charge (ex : required_status_checks)."
+    "\n- La clé 'parameters' contient les options spécifiques à ce type."
+    "\n- Les lignes qui commencent par # ou // sont ignorées lors de l'enregistrement."
+)
 
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -654,7 +660,11 @@ def add_rule_interactively(api: GitHubAPI) -> Dict[str, Any]:
     choice = input("Votre choix [1]: ").strip() or "1"
     if choice == "1":
         return build_required_status_rule(api)
-    payload = open_editor_with_json({"type": "", "parameters": {}})
+    payload = open_editor_with_json(
+        {"type": "", "parameters": {}},
+        header=GENERIC_RULE_EDITOR_HEADER,
+        allow_comments=True,
+    )
     validate_rule_payload(payload)
     return payload
 
@@ -665,7 +675,11 @@ def edit_rule_interactively(api: GitHubAPI, rule: Dict[str, Any]) -> Dict[str, A
         return build_required_status_rule(api, existing=rule)
 
     print("Modification via éditeur JSON.")
-    payload = open_editor_with_json(rule)
+    payload = open_editor_with_json(
+        rule,
+        header=GENERIC_RULE_EDITOR_HEADER,
+        allow_comments=True,
+    )
     validate_rule_payload(payload)
     return payload
 

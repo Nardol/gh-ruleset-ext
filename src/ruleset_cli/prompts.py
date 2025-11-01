@@ -133,20 +133,46 @@ def _resolve_editor() -> str:
     )
 
 
-def open_editor_with_json(data: Any) -> Any:
+def open_editor_with_json(
+    data: Any,
+    *,
+    header: Optional[str] = None,
+    allow_comments: bool = False,
+) -> Any:
     """Open user editor and return parsed JSON."""
 
     editor = _resolve_editor()
 
     with tempfile.NamedTemporaryFile("w+", suffix=".json", delete=False) as tmp:
         path = Path(tmp.name)
+        if header:
+            header_lines = header.strip().splitlines()
+            for line in header_lines:
+                tmp.write(f"# {line}\n")
+            tmp.write("\n")
         json.dump(data, tmp, indent=2, ensure_ascii=False)
         tmp.flush()
 
     try:
         subprocess.run(f"{editor} {path}", shell=True, check=True)
         with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+            content = handle.read()
+        if allow_comments:
+            filtered_lines = []
+            for line in content.splitlines():
+                stripped = line.lstrip()
+                if stripped.startswith("#") or stripped.startswith("//"):
+                    continue
+                filtered_lines.append(line)
+            content = "\n".join(filtered_lines)
+        if not content.strip():
+            raise RuntimeError("Le contenu de l'éditeur est vide.")
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as exc:  # pragma: no cover - interactive flow
+            raise RuntimeError(
+                "Le contenu fourni n'est pas un JSON valide. Supprimez ou corrigez les annotations."
+            ) from exc
     except subprocess.CalledProcessError as exc:  # pragma: no cover - interactive flow
         raise RuntimeError(f"L'éditeur s'est terminé en erreur ({exc}).") from exc
     finally:
