@@ -21,6 +21,9 @@ from .validation import validate_ruleset_payload
 ENFORCEMENT_CHOICES = ["disabled", "evaluate", "active"]
 TARGET_CHOICES = ["branch", "tag", "push"]
 
+DEFAULT_BRANCH_TOKEN = "~DEFAULT_BRANCH"
+DEFAULT_BRANCH_REF = f"refs/heads/{DEFAULT_BRANCH_TOKEN}"
+
 
 def main(argv: Optional[List[str]] = None) -> None:
     parser = build_parser()
@@ -534,14 +537,41 @@ def interactive_ruleset_builder(
 
     conditions = data.get("conditions", {})
     ref_conditions = conditions.get("ref_name", {})
-    include_defaults = [strip_ref_prefix(value) for value in ref_conditions.get("include", [])]
+    include_values = list(ref_conditions.get("include", []))
+    has_default_branch = any(is_default_branch_pattern(value) for value in include_values)
+    include_defaults = [
+        strip_ref_prefix(value)
+        for value in include_values
+        if not is_default_branch_pattern(value)
+    ]
     exclude_defaults = [strip_ref_prefix(value) for value in ref_conditions.get("exclude", [])]
 
-    include = prompt_multi_value(
-        f"Cibles {data['target']} à inclure (laisser vide pour toutes)",
-        default=include_defaults,
-        formatter=lambda value: format_ref_pattern(value, data["target"]),
+    include: List[str] = []
+    include_default_branch = prompt_yes_no(
+        "Appliquer le ruleset à la branche par défaut ?",
+        default=has_default_branch,
     )
+    if include_default_branch:
+        include.append(DEFAULT_BRANCH_TOKEN)
+
+    prompt_for_include = bool(include_defaults)
+    if not prompt_for_include:
+        if include_default_branch:
+            prompt_for_include = prompt_yes_no(
+                "Ajouter d'autres branches ou motifs en plus de la branche par défaut ?",
+                default=False,
+            )
+        else:
+            prompt_for_include = True
+
+    if prompt_for_include:
+        extra_include = prompt_multi_value(
+            f"Cibles {data['target']} à inclure (laisser vide pour toutes)",
+            default=include_defaults,
+            formatter=lambda value: format_ref_pattern(value, data["target"]),
+        )
+        include.extend(extra_include)
+
     exclude = prompt_multi_value(
         f"Cibles {data['target']} à exclure",
         default=exclude_defaults,
@@ -1037,9 +1067,15 @@ def strip_ref_prefix(value: str) -> str:
     return value
 
 
+def is_default_branch_pattern(value: str) -> bool:
+    return value in {DEFAULT_BRANCH_TOKEN, DEFAULT_BRANCH_REF}
+
+
 def format_ref_pattern(value: str, target: str) -> str:
     value = value.strip()
     if not value:
+        return value
+    if value.startswith("~"):
         return value
     if value.startswith("refs/"):
         return value
