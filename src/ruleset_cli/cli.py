@@ -15,6 +15,7 @@ from .prompts import (
     prompt_yes_no,
 )
 from .utils import resolve_repository
+from .validation import validate_ruleset_payload
 
 
 ENFORCEMENT_CHOICES = ["disabled", "evaluate", "active"]
@@ -89,6 +90,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Ouvrir l'objet JSON final dans l'éditeur par défaut avant envoi.",
     )
+    create_parser.add_argument(
+        "--skip-validate",
+        action="store_true",
+        help="Ne pas valider localement le payload via le schéma OpenAPI.",
+    )
     create_parser.set_defaults(handler=handle_create)
 
     update_parser = subparsers.add_parser("update", help="Modifier un ruleset existant.")
@@ -102,9 +108,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Ouvrir l'objet JSON final dans l'éditeur par défaut avant envoi.",
     )
+    update_parser.add_argument(
+        "--skip-validate",
+        action="store_true",
+        help="Ne pas valider localement le payload via le schéma OpenAPI.",
+    )
     update_parser.set_defaults(handler=handle_update)
 
     rule_parser = subparsers.add_parser("rule", help="Gérer les règles individuelles d'un ruleset.")
+    rule_parser.add_argument(
+        "--skip-validate",
+        action="store_true",
+        help="Ne pas valider localement les modifications de ruleset.",
+    )
     rule_sub = rule_parser.add_subparsers(dest="rule_command")
 
     rule_list = rule_sub.add_parser("list", help="Lister les règles d'un ruleset.")
@@ -154,6 +170,29 @@ def build_parser() -> argparse.ArgumentParser:
     contexts_parser.set_defaults(handler=handle_checks_list)
 
     return parser
+
+
+# ---------------------------------------------------------------------------
+# Validation helpers
+
+
+def ensure_payload_is_valid(payload: Dict[str, Any], *, skip: bool, action: str) -> bool:
+    if skip:
+        return True
+
+    errors = validate_ruleset_payload(payload)
+    if not errors:
+        return True
+
+    print("Erreurs de validation OpenAPI détectées :")
+    for error in errors:
+        print(f"- {error}")
+
+    if prompt_yes_no(f"Poursuivre {action} malgré tout ?", default=False):
+        return True
+
+    print(f"{action.capitalize()} annulée.")
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +260,9 @@ def handle_create(api: GitHubAPI, args: argparse.Namespace) -> None:
     if args.editor:
         payload = open_editor_with_json(payload)
 
+    if not ensure_payload_is_valid(payload, skip=args.skip_validate, action="la création"):
+        return
+
     created = api.create_ruleset(payload)
     print(f"Ruleset créé avec succès (ID {created.get('id')}).")
 
@@ -234,6 +276,9 @@ def handle_update(api: GitHubAPI, args: argparse.Namespace) -> None:
 
     if args.editor:
         payload = open_editor_with_json(payload)
+
+    if not ensure_payload_is_valid(payload, skip=args.skip_validate, action="la mise à jour"):
+        return
 
     updated = api.update_ruleset(args.ruleset_id, payload)
     print(f"Ruleset {updated.get('id')} mis à jour.")
@@ -260,6 +305,8 @@ def handle_rule_add(api: GitHubAPI, args: argparse.Namespace) -> None:
     payload["rules"] = manage_rules_interactively(
         api, payload.get("rules", []), action="add"
     )
+    if not ensure_payload_is_valid(payload, skip=getattr(args, "skip_validate", False), action="l'ajout de la règle"):
+        return
     updated = api.update_ruleset(args.ruleset_id, payload)
     print(f"Règle ajoutée. Le ruleset compte désormais {len(updated.get('rules', []))} règles.")
 
@@ -272,6 +319,8 @@ def handle_rule_edit(api: GitHubAPI, args: argparse.Namespace) -> None:
     if index < 0 or index >= len(rules):
         raise RuntimeError("Index de règle invalide.")
     rules[index] = edit_rule_interactively(api, rules[index])
+    if not ensure_payload_is_valid(payload, skip=getattr(args, "skip_validate", False), action="la mise à jour de la règle"):
+        return
     updated = api.update_ruleset(args.ruleset_id, payload)
     print(f"Règle {args.rule_index} mise à jour. ({summary_for_rule(updated['rules'][index])})")
 
@@ -289,6 +338,8 @@ def handle_rule_delete(api: GitHubAPI, args: argparse.Namespace) -> None:
             print("Suppression annulée.")
             return
     removed = rules.pop(index)
+    if not ensure_payload_is_valid(payload, skip=getattr(args, "skip_validate", False), action="la suppression de la règle"):
+        return
     api.update_ruleset(args.ruleset_id, payload)
     print(f"Règle supprimée : {summarize_rule(removed)}")
 

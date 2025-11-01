@@ -29,6 +29,7 @@ All contributions are welcome — from bug reports to pull requests.
 - Use `python3 -m py_compile $(find src -name "*.py")` as a quick syntax guard.
 - Avoid adding heavy dependencies; the goal is to rely only on GitHub CLI.
 - Re-run interactive commands (create/update/rule/ checks) to make sure prompts still make sense.
+- Leave the OpenAPI validation enabled unless you are explicitly debugging schema drift; document any use of `--skip-validate`.
 - If you touch the CLI UX, document the change in both `README.md` and `README.fr.md`.
 
 ## Submitting changes

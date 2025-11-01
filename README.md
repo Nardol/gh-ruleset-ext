@@ -17,6 +17,7 @@
 - Displays each check’s GitHub App (integration) when available so you can lock the rule to that integration ID.
 - Manage bypass actors (repository roles, teams, integrations, organisation/enterprise admins) interactively.
 - Fully JSON-friendly: feed a file (`--file`), open the payload in `$EDITOR` (`--editor`), or clone an existing ruleset before editing (`--from-existing`).
+- Validates payloads locally against the GitHub REST OpenAPI schema before calling `gh api` (bypass with `--skip-validate` when necessary).
 
 > ℹ️ Ruleset operations require **admin** permissions on the target repository. Make sure your `gh` session is authenticated with a token that has admin rights.
 
@@ -65,6 +66,9 @@ gh ruleset-ext view 42 --json
 # Create or update rulesets interactively
 gh ruleset-ext create
 gh ruleset-ext update 42
+
+# Skip local validation (not recommended unless the schema lags behind)
+gh ruleset-ext create --skip-validate --file fixtures/ruleset.json
 
 # Manage individual rules inside a ruleset
 gh ruleset-ext rule list 42

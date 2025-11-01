@@ -13,6 +13,7 @@
 - `./gh-ruleset-ext --help` – confirm CLI wiring and available subcommands.
 - `python3 -m py_compile $(find src -name "*.py")` – quick syntax validation.
 - Use real repository contexts to exercise interactive flows (e.g., `gh ruleset-ext checks --repo owner/name`).
+- Ensure OpenAPI validation runs cleanly (default behaviour). Use `--skip-validate` only when documenting the reason.
 
 ## Coding Style & Naming Conventions
 

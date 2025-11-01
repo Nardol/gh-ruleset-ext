@@ -12,6 +12,7 @@ Extension `gh` pour gérer de bout en bout les rulesets GitHub d’un dépôt. E
 - ajouter, modifier ou retirer une règle individuelle ;
 - configurer interactivement les checks de statut requis (`required_status_checks`) grâce à l’autodiscovery des checks récemment exécutés (branche par défaut, PR ouverte/fusionnée la plus récente, refs personnalisées) ;
 - éditer ou compléter n’importe quel rule set au format JSON (via `--file` ou l’éditeur défini dans `EDITOR` / `VISUAL`).
+- valider localement la charge utile via le schéma OpenAPI de GitHub avant d’appeler `gh api` (désactivable avec `--skip-validate`).
 
 > ℹ️ L’API Rulesets nécessite des droits **Admin** sur le dépôt ciblé. Les commandes échoueront pour un dépôt sur lequel vous n’êtes pas administrateur.
 
@@ -49,6 +50,9 @@ gh ruleset-ext create
 
 # Modifier un ruleset existant (assistant interactif)
 gh ruleset-ext update 42
+
+# Ignorer la validation locale (à éviter sauf schéma obsolète)
+gh ruleset-ext create --skip-validate --file fixtures/ruleset.json
 
 # Gérer les règles individuellement
 gh ruleset-ext rule list 42

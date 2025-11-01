@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- No unreleased changes yet.
+- Nothing yet.
+
+## [0.2.0] - 2025-11-01
+
+- Added local OpenAPI-derived validation for ruleset payloads with a `--skip-validate` escape hatch.
 
 ## [0.1.0] - 2025-10-31
 
